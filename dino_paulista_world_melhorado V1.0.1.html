@@ -1,0 +1,1595 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dino Paulista Livre - Edição Melhorada</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PeerJS WebRTC SDK for Cross-PC Multiplayer -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  
+  <!-- Firebase JS SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    window.FirebaseLib = {
+      initializeApp, getAuth, signInAnonymously, signInWithCustomToken,
+      getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc
+    };
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700;800&display=swap');
+    
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #0f172a;
+      font-family: 'Inter', sans-serif;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .font-pixel {
+      font-family: 'Press Start 2P', cursive;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.3);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(16, 185, 129, 0.5);
+      border-radius: 4px;
+    }
+
+    .pixelated {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    .speech-bubble {
+      position: absolute;
+      background: #ffffff;
+      border: 2px solid #000000;
+      border-radius: 10px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #0f172a;
+      pointer-events: none;
+      white-space: nowrap;
+      box-shadow: 0 8px 15px rgba(0,0,0,0.4);
+      transform: translate(-50%, -100%);
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      z-index: 30;
+    }
+
+    .speech-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -7px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 7px 7px 0;
+      border-style: solid;
+      border-color: #ffffff transparent;
+      display: block;
+      width: 0;
+    }
+  </style>
+</head>
+<body class="w-screen h-screen flex flex-col justify-between relative overflow-hidden bg-slate-950 text-white select-none">
+
+  <!-- Game Canvas Container -->
+  <div id="game-container" class="absolute inset-0 w-full h-full">
+    <canvas id="gameCanvas" class="w-full h-full block pixelated"></canvas>
+  </div>
+
+  <!-- Speech Bubbles Overlay -->
+  <div id="bubbles-container" class="absolute inset-0 pointer-events-none overflow-hidden z-20"></div>
+
+  <!-- HUD Overlay -->
+  <div class="relative z-30 pointer-events-none w-full h-full flex flex-col justify-between p-3 sm:p-5 max-w-7xl mx-auto">
+    
+    <!-- Top Bar: Player Stats, Online Room & Options -->
+    <div class="flex justify-between items-start w-full gap-3">
+      
+      <!-- Player Profile Card & Options -->
+      <div class="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-slate-700/80 p-3 rounded-2xl shadow-2xl flex flex-col gap-2 min-w-[250px]">
+        <div class="flex items-center gap-3">
+          <div id="dino-avatar" class="relative w-12 h-12 rounded-xl bg-emerald-600 border-2 border-emerald-400 flex items-center justify-center text-2xl shadow-inner cursor-pointer hover:scale-105 transition" title="Clique para personalizar">
+            🦖
+            <span id="player-flag-badge" class="absolute -top-2 -right-2 text-lg drop-shadow">🇧🇷</span>
+          </div>
+          <div class="flex flex-col">
+            <div class="flex items-center gap-2">
+              <span id="player-name-display" class="font-bold text-sm text-slate-100 truncate max-w-[110px]">RiderPaulista</span>
+              <button id="btn-open-custom" class="bg-slate-800 hover:bg-slate-700 text-xs text-emerald-400 px-2 py-1 rounded-lg border border-slate-600 font-semibold transition" title="Editar Perfil">✏️ Perfil</button>
+            </div>
+            <span id="sync-status" class="text-[10px] text-emerald-400 font-bold flex items-center gap-1 mt-0.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Multi-PC On (P2P)
+            </span>
+          </div>
+        </div>
+
+        <!-- Stamina Bar -->
+        <div class="w-full mt-1">
+          <div class="flex justify-between text-[10px] font-extrabold text-slate-300 mb-1">
+            <span>ENERGIA / CORRIDA (SHIFT)</span>
+            <span id="stamina-text">100%</span>
+          </div>
+          <div class="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-700">
+            <div id="stamina-bar" class="bg-gradient-to-r from-emerald-500 to-green-400 h-full rounded-full transition-all duration-75" style="width: 100%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Top: Room Connection Box for Friends & Online Count -->
+      <div class="flex flex-col items-end gap-2">
+        
+        <!-- Room Link / Code Box for Friends -->
+        <div class="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-emerald-500/50 p-3 rounded-2xl shadow-2xl flex flex-col items-end gap-2 text-right">
+          <div class="flex items-center gap-2">
+            <span class="relative flex h-3 w-3">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <span class="text-xs font-pixel text-emerald-400" id="online-count">Jogadores: 1</span>
+          </div>
+
+          <!-- Room Code & Share Input -->
+          <div class="flex items-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-700">
+            <span class="text-[10px] text-slate-400 font-bold px-1">SALA:</span>
+            <input type="text" id="room-code-input" class="bg-slate-800 border border-slate-600 rounded-lg px-2 py-0.5 text-xs text-amber-400 font-mono font-bold w-20 text-center uppercase" placeholder="CÓDIGO">
+            <button id="btn-join-room" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg transition">ENTRAR</button>
+            <button id="btn-copy-link" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg transition" title="Copiar Link para Amigo">
+              🔗 COPIAR
+            </button>
+          </div>
+          <div id="copy-toast" class="text-[10px] text-emerald-400 font-bold hidden">Link/Código copiado! Envie ao amigo.</div>
+        </div>
+
+        <!-- Controls Helper (Desktop) -->
+        <div class="hidden md:flex flex-col items-end bg-slate-900/80 backdrop-blur border border-slate-800 px-3 py-2 rounded-xl text-[11px] text-slate-300 gap-1 shadow">
+          <div><kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-600 rounded text-amber-400">WASD</kbd> / <kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-600 rounded text-amber-400">Setas</kbd> Mover</div>
+          <div><kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-600 rounded text-amber-400">SHIFT</kbd> Correr</div>
+          <div><kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-600 rounded text-amber-400">ESPAÇO</kbd> Rugido do Dino</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Bar: Chat Box, Quick Emotes & Minimap -->
+    <div class="flex flex-col sm:flex-row justify-between items-end gap-3 w-full">
+      
+      <!-- Left: Chat Panel -->
+      <div class="pointer-events-auto flex flex-col gap-2 w-full sm:w-80 md:w-96">
+        
+        <!-- Messages Log -->
+        <div id="chat-messages" class="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 h-32 overflow-y-auto flex flex-col gap-1.5 text-xs text-slate-200 shadow-2xl">
+          <div class="text-emerald-400 font-semibold italic text-[11px]">🌐 Conexão Online Ativa! Envie o código da Sala no topo para seu amigo em outro PC!</div>
+        </div>
+
+        <!-- Chat Form & Roar Action -->
+        <div class="flex gap-2">
+          <form id="chat-form" class="flex-1 flex gap-1 bg-slate-900/90 border border-slate-700 rounded-xl p-1 shadow-md">
+            <input type="text" id="chat-input" placeholder="Enviar mensagem online..." maxlength="60" class="w-full bg-transparent border-none outline-none px-2 text-xs text-white placeholder-slate-400" autocomplete="off">
+            <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition">Enviar</button>
+          </form>
+
+          <button id="btn-roar" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-xl font-pixel text-[10px] shadow-lg active:scale-95 transition flex items-center justify-center gap-1 shrink-0" title="Rugir! (Espaço)">
+            🦖 RUGIR!
+          </button>
+        </div>
+
+        <!-- Quick Emotes Bar -->
+        <div class="flex gap-1.5 overflow-x-auto py-1">
+          <button class="emote-btn bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-base p-1.5 rounded-xl transition active:scale-90" data-emote="🇧🇷">🇧🇷</button>
+          <button class="emote-btn bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-base p-1.5 rounded-xl transition active:scale-90" data-emote="🚩">🚩</button>
+          <button class="emote-btn bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-base p-1.5 rounded-xl transition active:scale-90" data-emote="📢">📢</button>
+          <button class="emote-btn bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-base p-1.5 rounded-xl transition active:scale-90" data-emote="❤️">❤️</button>
+          <button class="emote-btn bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-base p-1.5 rounded-xl transition active:scale-90" data-emote="✊">✊</button>
+          <button class="emote-btn bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-base p-1.5 rounded-xl transition active:scale-90" data-emote="🎵">🎵</button>
+          <button class="emote-btn bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-base p-1.5 rounded-xl transition active:scale-90" data-emote="🦖">🦖</button>
+        </div>
+      </div>
+
+      <!-- Right: Mobile Joystick / Controls & Dynamic Minimap -->
+      <div class="pointer-events-auto flex items-center justify-between w-full sm:w-auto gap-3">
+        
+        <!-- Mobile D-Pad Touch Controls -->
+        <div class="block sm:hidden relative w-32 h-32 bg-slate-900/70 rounded-full border border-slate-700 touch-none shadow-2xl backdrop-blur-sm" id="dpad-container">
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="w-10 h-10 rounded-full bg-slate-700/60 border border-slate-500/50"></div>
+          </div>
+          <button id="dpad-up" class="absolute top-1 left-10 w-12 h-10 bg-slate-800/90 active:bg-emerald-600 rounded-t-lg text-xs font-bold">▲</button>
+          <button id="dpad-down" class="absolute bottom-1 left-10 w-12 h-10 bg-slate-800/90 active:bg-emerald-600 rounded-b-lg text-xs font-bold">▼</button>
+          <button id="dpad-left" class="absolute top-10 left-1 w-10 h-12 bg-slate-800/90 active:bg-emerald-600 rounded-l-lg text-xs font-bold">◄</button>
+          <button id="dpad-right" class="absolute top-10 right-1 w-10 h-12 bg-slate-800/90 active:bg-emerald-600 rounded-r-lg text-xs font-bold">►</button>
+        </div>
+
+        <!-- Mobile Sprint Action -->
+        <div class="block sm:hidden flex flex-col gap-2">
+          <button id="mobile-sprint-btn" class="w-14 h-14 rounded-full bg-emerald-600 active:bg-emerald-400 text-white font-bold text-[10px] shadow-lg border-2 border-emerald-300 flex items-center justify-center">
+            ⚡ CORRER
+          </button>
+        </div>
+
+        <!-- Minimap Canvas Container -->
+        <div class="bg-slate-900/90 border-2 border-slate-700 rounded-2xl p-1.5 shadow-2xl backdrop-blur-md">
+          <div class="text-[9px] font-bold text-slate-400 text-center mb-1">MAPA ONLINE</div>
+          <canvas id="minimapCanvas" width="120" height="120" class="rounded-xl border border-slate-800 block"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Customization Modal -->
+  <div id="custom-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 p-6 rounded-3xl max-w-md w-full flex flex-col gap-5 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <h3 class="text-lg font-bold text-emerald-400 flex items-center gap-2">
+          <span>🚩</span> Perfil & Bandeira 5x
+        </h3>
+        <button id="btn-close-modal" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+      </div>
+      
+      <!-- Nome -->
+      <div>
+        <label class="text-xs font-bold text-slate-300 block mb-1">Seu Apelido Online</label>
+        <input type="text" id="modal-name-input" maxlength="16" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-emerald-500">
+      </div>
+
+      <!-- Escolha de Bandeira -->
+      <div>
+        <label class="text-xs font-bold text-slate-300 block mb-2">Bandeira Gigante (5x)</label>
+        <div class="grid grid-cols-3 gap-2" id="flag-options">
+          <button data-flag="brasil" data-icon="🇧🇷" class="flag-btn p-2.5 rounded-xl bg-slate-800 border-2 border-emerald-500 flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-2xl">🇧🇷</span>
+            <span class="text-[11px] text-slate-200 font-bold">Brasil</span>
+          </button>
+          <button data-flag="b22" data-icon="2️⃣2️⃣" class="flag-btn p-2.5 rounded-xl bg-slate-800 border-2 border-transparent flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-xl font-black bg-gradient-to-r from-yellow-400 to-green-500 text-slate-900 px-2 py-0.5 rounded">22</span>
+            <span class="text-[11px] text-yellow-400 font-bold">Bandeira 22</span>
+          </button>
+          <button data-flag="pt" data-icon="🚩" class="flag-btn p-2.5 rounded-xl bg-slate-800 border-2 border-transparent flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-xl font-black bg-red-600 text-white px-2 py-0.5 rounded">PT</span>
+            <span class="text-[11px] text-red-400 font-bold">Bandeira PT</span>
+          </button>
+          <button data-flag="sp" data-icon="🏴" class="flag-btn p-2 rounded-xl bg-slate-800 border-2 border-transparent flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-2xl">⚪⚫</span>
+            <span class="text-[10px] text-slate-300 font-semibold">São Paulo</span>
+          </button>
+          <button data-flag="lgbt" data-icon="🏳️‍🌈" class="flag-btn p-2 rounded-xl bg-slate-800 border-2 border-transparent flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-2xl">🏳️‍🌈</span>
+            <span class="text-[10px] text-slate-300 font-semibold">Arco-Íris</span>
+          </button>
+          <button data-flag="paz" data-icon="🏳️" class="flag-btn p-2 rounded-xl bg-slate-800 border-2 border-transparent flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-2xl">🏳️</span>
+            <span class="text-[10px] text-slate-300 font-semibold">Paz</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Espécie de Dinossauro -->
+      <div>
+        <label class="text-xs font-bold text-slate-300 block mb-2">Espécie do Dinossauro</label>
+        <div class="grid grid-cols-3 gap-2" id="dino-species-options">
+          <button data-species="trex" class="species-btn p-2.5 rounded-xl bg-slate-800 border-2 border-emerald-500 flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-xl">🦖</span>
+            <span class="text-[11px] font-bold text-emerald-400">T-Rex</span>
+          </button>
+          <button data-species="triceratops" class="species-btn p-2.5 rounded-xl bg-slate-800 border-2 border-transparent flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-xl">🦏</span>
+            <span class="text-[11px] font-bold text-slate-300">Triceratops</span>
+          </button>
+          <button data-species="raptor" class="species-btn p-2.5 rounded-xl bg-slate-800 border-2 border-transparent flex flex-col items-center gap-1 hover:bg-slate-700 transition">
+            <span class="text-xl">🐊</span>
+            <span class="text-[11px] font-bold text-slate-300">Raptor</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Cor do Dinossauro -->
+      <div>
+        <label class="text-xs font-bold text-slate-300 block mb-2">Cor do Dinossauro</label>
+        <div class="flex gap-3" id="color-options">
+          <button data-color="#10b981" class="color-btn w-9 h-9 rounded-full bg-emerald-500 border-2 border-white ring-2 ring-emerald-400 shadow-md"></button>
+          <button data-color="#f59e0b" class="color-btn w-9 h-9 rounded-full bg-amber-500 border-2 border-transparent shadow-md"></button>
+          <button data-color="#ef4444" class="color-btn w-9 h-9 rounded-full bg-red-500 border-2 border-transparent shadow-md"></button>
+          <button data-color="#3b82f6" class="color-btn w-9 h-9 rounded-full bg-blue-500 border-2 border-transparent shadow-md"></button>
+          <button data-color="#8b5cf6" class="color-btn w-9 h-9 rounded-full bg-purple-500 border-2 border-transparent shadow-md"></button>
+        </div>
+      </div>
+
+      <!-- Botões de Ação -->
+      <div class="flex justify-end gap-2 mt-2 pt-3 border-t border-slate-800">
+        <button id="btn-save-modal" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-bold text-white shadow-lg active:scale-95 transition">
+          Salvar Alterações
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- GLOBAL VARIABLES DECLARATIONS ---
+    const myId = 'player_' + Math.random().toString(36).substr(2, 9);
+    
+    const TILE_SIZE = 32;
+    const MAP_TILES_X = 100;
+    const MAP_TILES_Y = 60;
+    const MAP_WIDTH = MAP_TILES_X * TILE_SIZE;
+    const MAP_HEIGHT = MAP_TILES_Y * TILE_SIZE;
+
+    // Canvas and UI Contexts
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const minimapCanvas = document.getElementById('minimapCanvas');
+    const minimapCtx = minimapCanvas.getContext('2d');
+    const bubblesContainer = document.getElementById('bubbles-container');
+
+    // Resize Canvas to Viewport
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Map Grid & Decorative Props Generation
+    const mapGrid = Array(MAP_TILES_Y).fill(null).map(() => Array(MAP_TILES_X).fill(0));
+    const aveY = Math.floor(MAP_TILES_Y / 2);
+    for (let ty = aveY - 4; ty <= aveY + 4; ty++) {
+      for (let tx = 0; tx < MAP_TILES_X; tx++) {
+        mapGrid[ty][tx] = (ty === aveY - 4 || ty === aveY + 4) ? 1 : 3;
+      }
+    }
+    for (let tx = 0; tx < MAP_TILES_X; tx++) {
+      mapGrid[aveY][tx] = 2;
+    }
+
+    const mapProps = [
+      { type: 'masp', x: MAP_WIDTH / 2, y: (aveY - 6) * TILE_SIZE },
+      { type: 'trio', x: MAP_WIDTH / 2 - 400, y: (aveY) * TILE_SIZE },
+      { type: 'trio', x: MAP_WIDTH / 2 + 500, y: (aveY) * TILE_SIZE },
+      { type: 'banca', x: MAP_WIDTH / 2 - 200, y: (aveY - 5) * TILE_SIZE },
+      { type: 'banca', x: MAP_WIDTH / 2 + 300, y: (aveY + 5) * TILE_SIZE },
+      { type: 'banco', x: MAP_WIDTH / 2 - 100, y: (aveY - 5) * TILE_SIZE },
+      { type: 'banco', x: MAP_WIDTH / 2 + 100, y: (aveY + 5) * TILE_SIZE }
+    ];
+
+    for (let i = 0; i < 90; i++) {
+      const rx = Math.floor(Math.random() * (MAP_TILES_X - 4)) + 2;
+      let ry = Math.floor(Math.random() * MAP_TILES_Y);
+      if (Math.abs(ry - aveY) > 5) {
+        mapProps.push({ type: 'tree', x: rx * TILE_SIZE, y: ry * TILE_SIZE });
+      }
+    }
+
+    // Flag Definitions
+    const FLAGS = {
+      brasil: { emoji: '🇧🇷', label: 'Brasil', type: 'brasil' },
+      b22: { emoji: '2️⃣2️⃣', label: '22', type: 'b22' },
+      pt: { emoji: '🚩', label: 'PT', type: 'pt' },
+      sp: { emoji: '🏴', label: 'São Paulo', type: 'sp' },
+      lgbt: { emoji: '🏳️‍🌈', label: 'Arco-Íris', colors: ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7'] },
+      paz: { emoji: '🏳️', label: 'Paz', colors: ['#ffffff', '#f1f5f9', '#e2e8f0'] }
+    };
+
+    // Player State
+    const player = {
+      id: myId,
+      name: 'RiderPaulista',
+      x: MAP_WIDTH / 2,
+      y: (aveY + 1) * TILE_SIZE,
+      dir: 'down',
+      isMoving: false,
+      isSprinting: false,
+      stamina: 100,
+      animFrame: 0,
+      animTimer: 0,
+      color: '#10b981',
+      flag: 'brasil',
+      species: 'trex',
+      msg: ''
+    };
+
+    // Carrega o perfil salvo neste navegador (nome, cor, bandeira e espécie).
+    try {
+      const savedProfile = JSON.parse(localStorage.getItem('dinoPaulistaProfile') || 'null');
+      if (savedProfile && typeof savedProfile === 'object') {
+        if (typeof savedProfile.name === 'string' && savedProfile.name.trim()) player.name = savedProfile.name.slice(0, 16);
+        if (typeof savedProfile.color === 'string' && /^#[0-9a-f]{6}$/i.test(savedProfile.color)) player.color = savedProfile.color;
+        if (FLAGS[savedProfile.flag]) player.flag = savedProfile.flag;
+        if (['trex', 'triceratops', 'raptor'].includes(savedProfile.species)) player.species = savedProfile.species;
+      }
+    } catch (e) { console.warn('Não foi possível carregar o perfil salvo.', e); }
+
+    const remotePlayers = new Map();
+    let simulatedBots = [];
+    let cameraX = 0;
+    let cameraY = 0;
+    let screenShakeTime = 0;
+
+    const keys = {
+      Up: false, Down: false, Left: false, Right: false, Sprint: false
+    };
+
+    // Sound FX Synthesizer Engine
+    const soundFX = {
+      ctx: null,
+      init() {
+        if (!this.ctx) {
+          try {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          } catch(e) {}
+        }
+      },
+      playRoar() {
+        this.init();
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(35, this.ctx.currentTime + 0.6);
+          gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.6);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.6);
+        } catch(e) {}
+      },
+      playStep() {
+        this.init();
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(70, this.ctx.currentTime);
+          gain.gain.setValueAtTime(0.06, this.ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.05);
+        } catch(e) {}
+      }
+    };
+
+    // --- MULTI-PC & MULTI-TAB NETWORK LAYER ---
+    let currentRoomCode = 'SP2026';
+    let peer = null;
+    const peerConnections = new Map();
+    
+    let broadcastChannel = null;
+    try {
+      broadcastChannel = new BroadcastChannel('dino_paulista_room_channel');
+      broadcastChannel.onmessage = (event) => {
+        const data = event.data;
+        if (data && data.id && data.id !== myId) {
+          if (data.type === 'chat') {
+            showSpeechBubble(data.id, data.name, data.msg);
+            addChatMessage(data.name, data.msg);
+          } else {
+            remotePlayers.set(data.id, data);
+            updateOnlineCounter();
+          }
+        }
+      };
+    } catch (e) {
+      console.warn("BroadcastChannel error:", e);
+    }
+
+    function getRoomFromURL() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('room') || 'SP2026';
+      } catch (err) {
+        return 'SP2026';
+      }
+    }
+
+    currentRoomCode = getRoomFromURL().toUpperCase();
+    document.getElementById('room-code-input').value = currentRoomCode;
+
+    function initPeerJSNetwork() {
+      try {
+        const peerId = `dino_paulista_${currentRoomCode}_${myId}`;
+        peer = new Peer(peerId, { debug: 0 });
+
+        peer.on('open', (id) => {
+          console.log('PeerJS Conectado:', id);
+          connectToExistingPeers();
+        });
+
+        peer.on('connection', (conn) => {
+          setupPeerEvents(conn);
+        });
+
+        peer.on('error', (err) => {
+          console.warn('PeerJS WebSocket restrito no ambiente iframe.', err);
+        });
+      } catch (err) {
+        console.warn('Conexão WebSocket bloqueada no iFrame/Canvas:', err);
+      }
+    }
+
+    function setupPeerEvents(conn) {
+      if (!conn) return;
+      peerConnections.set(conn.peer, conn);
+
+      conn.on('data', (data) => {
+        if (data && data.id && data.id !== myId) {
+          if (data.type === 'chat') {
+            showSpeechBubble(data.id, data.name, data.msg);
+            addChatMessage(data.name, data.msg);
+          } else {
+            remotePlayers.set(data.id, data);
+            updateOnlineCounter();
+          }
+        }
+      });
+
+      conn.on('close', () => {
+        peerConnections.delete(conn.peer);
+        updateOnlineCounter();
+      });
+    }
+
+    function connectToExistingPeers() {
+      if (!peer) return;
+      try {
+        const hostPeerId = `dino_paulista_${currentRoomCode}_host`;
+        if (`dino_paulista_${currentRoomCode}_${myId}` !== hostPeerId) {
+          const conn = peer.connect(hostPeerId);
+          if (conn) setupPeerEvents(conn);
+        }
+      } catch (e) {
+        console.warn('Conexão host falhou:', e);
+      }
+    }
+
+    function broadcastPlayerData() {
+      const payload = {
+        id: myId,
+        name: player.name,
+        x: Math.round(player.x),
+        y: Math.round(player.y),
+        dir: player.dir,
+        isMoving: player.isMoving,
+        color: player.color,
+        flag: player.flag,
+        species: player.species
+      };
+
+      if (broadcastChannel) {
+        try { broadcastChannel.postMessage(payload); } catch(e){}
+      }
+
+      peerConnections.forEach((conn) => {
+        if (conn && conn.open) conn.send(payload);
+      });
+    }
+
+    function broadcastChatMessage(msgText) {
+      const payload = {
+        type: 'chat',
+        id: myId,
+        name: player.name,
+        msg: msgText
+      };
+
+      if (broadcastChannel) {
+        try { broadcastChannel.postMessage(payload); } catch(e){}
+      }
+
+      peerConnections.forEach((conn) => {
+        if (conn && conn.open) conn.send(payload);
+      });
+    }
+
+    setInterval(broadcastPlayerData, 80);
+
+    // Join Room Button
+    document.getElementById('btn-join-room').addEventListener('click', () => {
+      const code = document.getElementById('room-code-input').value.trim().toUpperCase();
+      if (code) {
+        try {
+          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?room=' + code;
+          window.history.pushState({ path: newUrl }, '', newUrl);
+        } catch (e) {}
+        currentRoomCode = code;
+        if (peer) {
+          try { peer.destroy(); } catch(e){}
+        }
+        initPeerJSNetwork();
+        addChatMessage("SALA", `Você entrou na Sala: ${code}`);
+      }
+    });
+
+    // Copy Link Button
+    document.getElementById('btn-copy-link').addEventListener('click', () => {
+      const code = document.getElementById('room-code-input').value.trim().toUpperCase() || currentRoomCode;
+      let shareUrl = window.location.href;
+      try {
+        shareUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?room=' + code;
+      } catch (e) {}
+      
+      const tempInput = document.createElement('input');
+      document.body.appendChild(tempInput);
+      tempInput.value = shareUrl;
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+
+      const toast = document.getElementById('copy-toast');
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3000);
+    });
+
+    // --- SPRITE RENDERING WITH MASSIVE 5X FLAGS ---
+    function drawDinoRider(targetCtx, p, isLocal = false) {
+      targetCtx.save();
+      targetCtx.translate(Math.round(p.x), Math.round(p.y));
+
+      const bobbing = p.isMoving ? Math.sin((p.animFrame || 0) * Math.PI) * 3 : 0;
+
+      // Shadow
+      targetCtx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      targetCtx.beginPath();
+      targetCtx.ellipse(0, 12, 18, 9, 0, 0, Math.PI * 2);
+      targetCtx.fill();
+
+      targetCtx.save();
+      targetCtx.translate(0, bobbing);
+
+      const flagData = FLAGS[p.flag] || FLAGS.brasil;
+      const dinoColor = p.color || '#10b981';
+
+      if (p.dir === 'left' || p.dir === 'right') {
+        const flip = p.dir === 'left' ? -1 : 1;
+        targetCtx.scale(flip, 1);
+
+        // Dino Tail
+        targetCtx.fillStyle = dinoColor;
+        targetCtx.beginPath();
+        targetCtx.moveTo(-10, -5);
+        targetCtx.lineTo(-26, -14 + (p.isMoving ? -bobbing : 0));
+        targetCtx.lineTo(-14, 3);
+        targetCtx.fill();
+
+        // Legs
+        const legOffset = p.isMoving ? Math.sin((p.animFrame || 0) * Math.PI * 2) * 6 : 0;
+        targetCtx.fillStyle = '#065f46';
+        targetCtx.fillRect(-8 + legOffset, 6, 6, 12);
+        targetCtx.fillRect(2 - legOffset, 6, 6, 12);
+
+        // Body
+        targetCtx.fillStyle = dinoColor;
+        targetCtx.beginPath();
+        targetCtx.ellipse(-2, -3, 15, 12, 0, 0, Math.PI * 2);
+        targetCtx.fill();
+
+        // Head/Species
+        if (p.species === 'triceratops') {
+          targetCtx.fillStyle = '#fef08a';
+          targetCtx.fillRect(10, -28, 8, 3);
+          targetCtx.fillRect(6, -32, 4, 8);
+          targetCtx.fillStyle = dinoColor;
+          targetCtx.beginPath();
+          targetCtx.arc(2, -20, 10, 0, Math.PI * 2);
+          targetCtx.fill();
+        } else if (p.species === 'raptor') {
+          targetCtx.fillRect(6, -22, 12, 8);
+        } else {
+          targetCtx.fillRect(4, -20, 11, 15);
+          targetCtx.fillRect(6, -26, 15, 11);
+        }
+
+        // Eyes
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.fillRect(14, -23, 3, 3);
+        targetCtx.fillStyle = '#000000';
+        targetCtx.fillRect(15, -22, 1.5, 1.5);
+
+        // Rider
+        targetCtx.fillStyle = '#78350f';
+        targetCtx.fillRect(-6, -14, 12, 4);
+
+        targetCtx.fillStyle = '#0284c7';
+        targetCtx.fillRect(-4, -23, 8, 10);
+
+        targetCtx.fillStyle = '#fde047';
+        targetCtx.fillRect(-4, -29, 8, 6);
+        targetCtx.fillStyle = '#fca5a5';
+        targetCtx.fillRect(-3, -26, 7, 4);
+
+        // Arm holding giant pole
+        const armAngle = -0.3 + Math.sin((p.animFrame || 0) * Math.PI) * 0.1;
+        targetCtx.save();
+        targetCtx.translate(1, -20);
+        targetCtx.rotate(armAngle);
+
+        targetCtx.fillStyle = '#0284c7';
+        targetCtx.fillRect(0, -2, 9, 4);
+        targetCtx.fillStyle = '#fca5a5';
+        targetCtx.fillRect(8, -2, 3, 4);
+
+        const poleLength = 135; 
+        targetCtx.fillStyle = '#d97706';
+        targetCtx.fillRect(8, -poleLength + 4, 4, poleLength);
+        targetCtx.fillStyle = '#f59e0b';
+        targetCtx.fillRect(6, -poleLength + 1, 8, 5);
+
+        drawFlagCloth(targetCtx, 11, -poleLength + 3, flagData, p.animFrame || 0, p.isMoving, 'right');
+        targetCtx.restore();
+
+      } else {
+        const legOffset = p.isMoving ? Math.sin((p.animFrame || 0) * Math.PI * 2) * 5 : 0;
+        
+        targetCtx.fillStyle = '#065f46';
+        targetCtx.fillRect(-12, 6 + legOffset, 6, 8);
+        targetCtx.fillRect(6, 6 - legOffset, 6, 8);
+
+        targetCtx.fillStyle = dinoColor;
+        targetCtx.beginPath();
+        targetCtx.ellipse(0, -2, 15, 12, 0, 0, Math.PI * 2);
+        targetCtx.fill();
+
+        if (p.dir === 'down') {
+          targetCtx.fillStyle = '#fef08a';
+          targetCtx.fillRect(-6, -6, 12, 10);
+          targetCtx.fillStyle = dinoColor;
+          targetCtx.fillRect(-8, -25, 16, 13);
+          
+          targetCtx.fillStyle = '#ffffff';
+          targetCtx.fillRect(-6, -22, 3, 3);
+          targetCtx.fillRect(3, -22, 3, 3);
+          targetCtx.fillStyle = '#000000';
+          targetCtx.fillRect(-5, -21, 1.5, 1.5);
+          targetCtx.fillRect(4, -21, 1.5, 1.5);
+
+          targetCtx.fillStyle = '#0284c7';
+          targetCtx.fillRect(-5, -21, 10, 8);
+          targetCtx.fillStyle = '#fde047';
+          targetCtx.fillRect(-5, -27, 10, 6);
+
+          targetCtx.fillStyle = '#0284c7';
+          targetCtx.fillRect(5, -19, 5, 3);
+          targetCtx.fillStyle = '#fca5a5';
+          targetCtx.fillRect(9, -19, 3, 3);
+
+          const poleLength = 135;
+          targetCtx.fillStyle = '#d97706';
+          targetCtx.fillRect(10, -poleLength - 10, 4, poleLength);
+          targetCtx.fillStyle = '#f59e0b';
+          targetCtx.fillRect(8, -poleLength - 14, 8, 5);
+
+          drawFlagCloth(targetCtx, 13, -poleLength - 12, flagData, p.animFrame || 0, p.isMoving, 'right');
+
+        } else {
+          targetCtx.fillRect(-3, 6, 6, 12);
+          targetCtx.fillStyle = dinoColor;
+          targetCtx.fillRect(-7, -25, 14, 13);
+
+          targetCtx.fillStyle = '#0284c7';
+          targetCtx.fillRect(-5, -20, 10, 9);
+          targetCtx.fillStyle = '#fde047';
+          targetCtx.fillRect(-5, -26, 10, 6);
+
+          targetCtx.fillStyle = '#0284c7';
+          targetCtx.fillRect(4, -18, 5, 3);
+          targetCtx.fillStyle = '#fca5a5';
+          targetCtx.fillRect(8, -18, 3, 3);
+
+          const poleLength = 135;
+          targetCtx.fillStyle = '#d97706';
+          targetCtx.fillRect(9, -poleLength - 8, 4, poleLength);
+          targetCtx.fillStyle = '#f59e0b';
+          targetCtx.fillRect(7, -poleLength - 12, 8, 5);
+
+          drawFlagCloth(targetCtx, 12, -poleLength - 10, flagData, p.animFrame || 0, p.isMoving, 'right');
+        }
+      }
+
+      targetCtx.restore();
+
+      // High Name Tag (unobstructed above flag)
+      targetCtx.fillStyle = isLocal ? 'rgba(16, 185, 129, 0.95)' : 'rgba(15, 23, 42, 0.95)';
+      targetCtx.strokeStyle = isLocal ? '#34d399' : '#475569';
+      targetCtx.lineWidth = 1.8;
+      
+      targetCtx.font = 'bold 12px Inter, sans-serif';
+      const labelText = `${flagData.emoji} ${p.name}`;
+      const textWidth = targetCtx.measureText(labelText).width;
+      const padding = 8;
+      const nameBoxY = -215;
+
+      targetCtx.beginPath();
+      targetCtx.roundRect(-textWidth / 2 - padding, nameBoxY, textWidth + padding * 2, 22, 8);
+      targetCtx.fill();
+      targetCtx.stroke();
+
+      targetCtx.fillStyle = '#ffffff';
+      targetCtx.textAlign = 'center';
+      targetCtx.fillText(labelText, 0, nameBoxY + 15);
+
+      targetCtx.restore();
+    }
+
+    function drawFlagCloth(targetCtx, fx, fy, flagData, animFrame, isMoving, side = 'right') {
+      targetCtx.save();
+      const waveOffset = Math.sin((performance.now() * 0.009) + animFrame) * 6;
+      
+      const flagWidth = 130;
+      const flagHeight = 85;
+
+      const flagX = side === 'right' ? fx : fx - flagWidth;
+      const flagY = fy + waveOffset;
+
+      if (flagData.type === 'brasil') {
+        targetCtx.fillStyle = '#009b3a';
+        targetCtx.fillRect(flagX, flagY, flagWidth, flagHeight);
+
+        targetCtx.fillStyle = '#fedf00';
+        targetCtx.beginPath();
+        targetCtx.moveTo(flagX + flagWidth / 2, flagY + 8);
+        targetCtx.lineTo(flagX + flagWidth - 8, flagY + flagHeight / 2);
+        targetCtx.lineTo(flagX + flagWidth / 2, flagY + flagHeight - 8);
+        targetCtx.lineTo(flagX + 8, flagY + flagHeight / 2);
+        targetCtx.closePath();
+        targetCtx.fill();
+
+        targetCtx.fillStyle = '#002776';
+        targetCtx.beginPath();
+        targetCtx.arc(flagX + flagWidth / 2, flagY + flagHeight / 2, 22, 0, Math.PI * 2);
+        targetCtx.fill();
+
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.beginPath();
+        targetCtx.arc(flagX + flagWidth / 2, flagY + flagHeight / 2, 22, -0.3, 0.3);
+        targetCtx.lineWidth = 4;
+        targetCtx.strokeStyle = '#ffffff';
+        targetCtx.stroke();
+
+      } else if (flagData.type === 'b22') {
+        targetCtx.fillStyle = '#f59e0b';
+        targetCtx.fillRect(flagX, flagY, flagWidth, flagHeight);
+        
+        targetCtx.fillStyle = '#10b981';
+        targetCtx.fillRect(flagX, flagY + flagHeight - 20, flagWidth, 20);
+
+        targetCtx.fillStyle = '#0f172a';
+        targetCtx.font = '900 52px Inter, sans-serif';
+        targetCtx.textAlign = 'center';
+        targetCtx.fillText('22', flagX + flagWidth / 2, flagY + 58);
+
+      } else if (flagData.type === 'pt') {
+        targetCtx.fillStyle = '#dc2626';
+        targetCtx.fillRect(flagX, flagY, flagWidth, flagHeight);
+
+        targetCtx.fillStyle = '#f59e0b';
+        targetCtx.font = '28px Inter, sans-serif';
+        targetCtx.textAlign = 'center';
+        targetCtx.fillText('★', flagX + flagWidth / 2, flagY + 34);
+
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.font = '900 48px Inter, sans-serif';
+        targetCtx.textAlign = 'center';
+        targetCtx.fillText('PT', flagX + flagWidth / 2, flagY + 68);
+
+      } else if (flagData.type === 'sp') {
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.fillRect(flagX, flagY, flagWidth, flagHeight);
+
+        targetCtx.fillStyle = '#000000';
+        const numStripes = 7;
+        const stripeH = flagHeight / numStripes;
+        for (let i = 1; i < numStripes; i += 2) {
+          targetCtx.fillRect(flagX, flagY + (i * stripeH), flagWidth, stripeH);
+        }
+
+        targetCtx.fillStyle = '#ef4444';
+        targetCtx.fillRect(flagX, flagY, 48, 36);
+
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.beginPath();
+        targetCtx.arc(flagX + 24, flagY + 18, 9, 0, Math.PI * 2);
+        targetCtx.fill();
+
+      } else {
+        const colors = flagData.colors;
+        const stripeHeight = flagHeight / colors.length;
+
+        colors.forEach((col, idx) => {
+          targetCtx.fillStyle = col;
+          targetCtx.fillRect(flagX, flagY + (idx * stripeHeight), flagWidth, stripeHeight + 0.5);
+        });
+      }
+
+      targetCtx.strokeStyle = 'rgba(0,0,0,0.4)';
+      targetCtx.lineWidth = 2.5;
+      targetCtx.strokeRect(flagX, flagY, flagWidth, flagHeight);
+
+      targetCtx.restore();
+    }
+
+    // --- BOTS SIMULADOS DE APOIO ---
+    const BOT_NAMES = [
+      "PaulistaVivo", "ManifestanteDino", "EcoviaBR", "DinoLivre",
+      "SambaSaurus", "SampaRider", "CulturaLivre", "SP_Verde"
+    ];
+
+    function initSimulatedBots() {
+      const flagsKeys = Object.keys(FLAGS);
+      simulatedBots = BOT_NAMES.map((name, i) => {
+        return {
+          id: 'bot_' + i,
+          name: name,
+          x: MAP_WIDTH / 2 + (Math.random() - 0.5) * 1000,
+          y: (Math.floor(MAP_TILES_Y / 2) + (Math.random() - 0.5) * 8) * TILE_SIZE,
+          targetX: MAP_WIDTH / 2 + (Math.random() - 0.5) * 1000,
+          targetY: (Math.floor(MAP_TILES_Y / 2) + (Math.random() - 0.5) * 8) * TILE_SIZE,
+          speed: 1.8 + Math.random() * 0.9,
+          dir: 'down',
+          animFrame: 0,
+          animTimer: 0,
+          isMoving: true,
+          color: ['#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6'][i % 5],
+          flag: flagsKeys[i % flagsKeys.length],
+          species: ['trex', 'triceratops', 'raptor'][i % 3],
+          chatTimer: Math.random() * 8
+        };
+      });
+    }
+    initSimulatedBots();
+
+    function updateBots(delta) {
+      const frases = [
+        "Avenida Paulista é nossa! 🇧🇷", "Olha a bandeira gigante! 📢", "Rugido Dino! 321... REX! REX! 🦖",
+        "Bandeira 22 gigante! 🟡", "Bandeira PT gigante! 🚩", "Paulista Livre online! ✊", "Avenida Paulista em festa! ⚪⚫"
+      ];
+
+      simulatedBots.forEach(bot => {
+        const dx = bot.targetX - bot.x;
+        const dy = bot.targetY - bot.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < 20) {
+          bot.targetX = Math.max(100, Math.min(MAP_WIDTH - 100, bot.x + (Math.random() - 0.5) * 700));
+          bot.targetY = Math.max(100, Math.min(MAP_HEIGHT - 100, bot.y + (Math.random() - 0.5) * 500));
+        } else {
+          const frameScale = Math.min(delta, 0.05) * 60;
+          bot.x += (dx / dist) * bot.speed * frameScale;
+          bot.y += (dy / dist) * bot.speed * frameScale;
+
+          if (Math.abs(dx) > Math.abs(dy)) {
+            bot.dir = dx > 0 ? 'right' : 'left';
+          } else {
+            bot.dir = dy > 0 ? 'down' : 'up';
+          }
+
+          bot.animTimer += delta;
+          if (bot.animTimer > 0.15) {
+            bot.animFrame = (bot.animFrame + 1) % 2;
+            bot.animTimer = 0;
+          }
+        }
+
+        bot.chatTimer += delta;
+        if (bot.chatTimer > 18 + Math.random() * 25) {
+          bot.chatTimer = 0;
+          const msg = frases[Math.floor(Math.random() * frases.length)];
+          showSpeechBubble(bot.id, bot.name, msg);
+          addChatMessage(bot.name, msg);
+        }
+      });
+    }
+
+    // --- REAL FIRESTORE MULTIPLAYER SYNC ---
+    let db = null, auth = null;
+
+    async function initFirebaseSync() {
+      if (!window.FirebaseLib) return;
+      const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc } = window.FirebaseLib;
+
+      try {
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'dino-paulista-v2';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+        if (!firebaseConfig) return;
+
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+
+        const playersCol = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+        onSnapshot(playersCol, (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            const data = change.doc.data();
+            if (change.doc.id === myId) return;
+
+            if (change.type === "added" || change.type === "modified") {
+              const existing = remotePlayers.get(change.doc.id);
+              if (data.msg && data.msg !== existing?.msg) {
+                showSpeechBubble(change.doc.id, data.name, data.msg);
+                addChatMessage(data.name, data.msg);
+              }
+              remotePlayers.set(change.doc.id, data);
+            } else if (change.type === "removed") {
+              remotePlayers.delete(change.doc.id);
+            }
+          });
+          updateOnlineCounter();
+        });
+
+        setInterval(() => {
+          if (!auth.currentUser) return;
+          const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'players', myId);
+          setDoc(userDoc, {
+            id: myId,
+            name: player.name,
+            x: Math.round(player.x),
+            y: Math.round(player.y),
+            dir: player.dir,
+            isMoving: player.isMoving,
+            color: player.color,
+            flag: player.flag,
+            species: player.species,
+            msg: player.msg || '',
+            lastUpdate: Date.now()
+          }, { merge: true });
+        }, 120);
+
+        window.addEventListener('beforeunload', () => {
+          if (auth.currentUser) {
+            const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'players', myId);
+            deleteDoc(userDoc);
+          }
+        });
+
+      } catch (err) {
+        console.warn("Sem servidor Firebase. Rodando P2P WebRTC.", err);
+      }
+    }
+
+    initFirebaseSync();
+    initPeerJSNetwork();
+
+    function updateOnlineCounter() {
+      const realOnline = 1 + remotePlayers.size + peerConnections.size;
+      document.getElementById('online-count').innerText = `Jogadores Reais: ${realOnline}`;
+    }
+
+    // --- KEYBOARD & TOUCH CONTROLS ---
+    window.addEventListener('keydown', (e) => {
+      soundFX.init();
+      if (document.activeElement === document.getElementById('chat-input') || 
+          document.activeElement === document.getElementById('modal-name-input') ||
+          document.activeElement === document.getElementById('room-code-input')) return;
+
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.Up = true;
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.Down = true;
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.Left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.Right = true;
+      if (e.key === 'Shift') keys.Sprint = true;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        triggerRoar();
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.Up = false;
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.Down = false;
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.Left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.Right = false;
+      if (e.key === 'Shift') keys.Sprint = false;
+    });
+
+    const setupMobileBtn = (id, keyName) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.addEventListener('touchstart', (e) => { e.preventDefault(); soundFX.init(); keys[keyName] = true; });
+      btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+      btn.addEventListener('touchcancel', () => { keys[keyName] = false; });
+      btn.addEventListener('mousedown', () => { soundFX.init(); keys[keyName] = true; });
+      btn.addEventListener('mouseup', () => { keys[keyName] = false; });
+    };
+
+    setupMobileBtn('dpad-up', 'Up');
+    setupMobileBtn('dpad-down', 'Down');
+    setupMobileBtn('dpad-left', 'Left');
+    setupMobileBtn('dpad-right', 'Right');
+
+    const mobileSprintBtn = document.getElementById('mobile-sprint-btn');
+    if (mobileSprintBtn) {
+      mobileSprintBtn.addEventListener('touchstart', (e) => { e.preventDefault(); keys.Sprint = true; });
+      mobileSprintBtn.addEventListener('touchend', (e) => { e.preventDefault(); keys.Sprint = false; });
+    }
+
+    // --- CHAT & EMOTES ---
+    function triggerRoar() {
+      soundFX.playRoar();
+      screenShakeTime = 0.45;
+      const emojiBandeira = FLAGS[player.flag]?.emoji || '🇧🇷';
+      const roarText = `${emojiBandeira} ROAAR!! REX! 🦖🔥`;
+      player.msg = roarText;
+      showSpeechBubble(myId, player.name, roarText);
+      addChatMessage(player.name, `${emojiBandeira} RUGIDO DINO REVOLUÇÃO!`);
+      broadcastChatMessage(roarText);
+      setTimeout(() => { if (player.msg === roarText) player.msg = ''; }, 3000);
+    }
+
+    document.getElementById('btn-roar').addEventListener('click', triggerRoar);
+
+    const activeBubbles = new Map();
+
+    function showSpeechBubble(targetId, name, text) {
+      let bubbleEl = activeBubbles.get(targetId);
+      if (!bubbleEl) {
+        bubbleEl = document.createElement('div');
+        bubbleEl.className = 'speech-bubble';
+        bubblesContainer.appendChild(bubbleEl);
+        activeBubbles.set(targetId, bubbleEl);
+      }
+      
+      bubbleEl.innerText = text;
+      bubbleEl.style.opacity = '1';
+
+      if (bubbleEl.timeout) clearTimeout(bubbleEl.timeout);
+      bubbleEl.timeout = setTimeout(() => {
+        bubbleEl.style.opacity = '0';
+      }, 3500);
+    }
+
+    function addChatMessage(sender, text) {
+      const chatBox = document.getElementById('chat-messages');
+      const msgEl = document.createElement('div');
+      msgEl.className = 'leading-relaxed break-words';
+      msgEl.innerHTML = `<span class="font-bold text-emerald-400">${escapeHTML(sender)}:</span> <span class="text-slate-100">${escapeHTML(text)}</span>`;
+      chatBox.appendChild(msgEl);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+
+    document.getElementById('chat-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (text) {
+        player.msg = text;
+        showSpeechBubble(myId, player.name, text);
+        addChatMessage(player.name, text);
+        broadcastChatMessage(text);
+        input.value = '';
+        setTimeout(() => { if (player.msg === text) player.msg = ''; }, 3500);
+      }
+    });
+
+    document.querySelectorAll('.emote-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const emote = btn.getAttribute('data-emote');
+        player.msg = emote;
+        showSpeechBubble(myId, player.name, emote);
+        addChatMessage(player.name, emote);
+        broadcastChatMessage(emote);
+        setTimeout(() => { if (player.msg === emote) player.msg = ''; }, 3000);
+      });
+    });
+
+    // --- MODAL SETTINGS ---
+    const customModal = document.getElementById('custom-modal');
+    const modalNameInput = document.getElementById('modal-name-input');
+    
+    document.getElementById('btn-open-custom').addEventListener('click', () => {
+      modalNameInput.value = player.name;
+      customModal.classList.remove('hidden');
+    });
+
+    document.getElementById('dino-avatar').addEventListener('click', () => {
+      modalNameInput.value = player.name;
+      customModal.classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-modal').addEventListener('click', () => {
+      customModal.classList.add('hidden');
+    });
+
+    document.querySelectorAll('.flag-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.flag-btn').forEach(b => {
+          b.classList.remove('border-emerald-500');
+          b.classList.add('border-transparent');
+        });
+        btn.classList.remove('border-transparent');
+        btn.classList.add('border-emerald-500');
+        player.flag = btn.getAttribute('data-flag');
+        
+        const emoji = FLAGS[player.flag]?.emoji || '🇧🇷';
+        document.getElementById('player-flag-badge').innerText = emoji;
+      });
+    });
+
+    document.querySelectorAll('.species-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.species-btn').forEach(b => {
+          b.classList.remove('border-emerald-500');
+          b.classList.add('border-transparent');
+        });
+        btn.classList.remove('border-transparent');
+        btn.classList.add('border-emerald-500');
+        player.species = btn.getAttribute('data-species');
+      });
+    });
+
+    document.querySelectorAll('.color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('ring-2', 'ring-emerald-400'));
+        btn.classList.add('ring-2', 'ring-emerald-400');
+        player.color = btn.getAttribute('data-color');
+        document.getElementById('dino-avatar').style.backgroundColor = player.color;
+      });
+    });
+
+    document.getElementById('btn-save-modal').addEventListener('click', () => {
+      const newName = modalNameInput.value.trim();
+      if (newName) {
+        player.name = newName;
+        document.getElementById('player-name-display').innerText = newName;
+      }
+      try {
+        localStorage.setItem('dinoPaulistaProfile', JSON.stringify({
+          name: player.name, color: player.color, flag: player.flag, species: player.species
+        }));
+      } catch (e) { console.warn('Não foi possível salvar o perfil neste navegador.', e); }
+      customModal.classList.add('hidden');
+    });
+
+    // Reflete no HUD as preferências carregadas do navegador.
+    document.getElementById('player-name-display').innerText = player.name;
+    document.getElementById('player-flag-badge').innerText = FLAGS[player.flag]?.emoji || '🇧🇷';
+    document.getElementById('dino-avatar').style.backgroundColor = player.color;
+    document.querySelectorAll('.flag-btn').forEach(btn => {
+      const active = btn.getAttribute('data-flag') === player.flag;
+      btn.classList.toggle('border-emerald-500', active);
+      btn.classList.toggle('border-transparent', !active);
+    });
+    document.querySelectorAll('.species-btn').forEach(btn => {
+      const active = btn.getAttribute('data-species') === player.species;
+      btn.classList.toggle('border-emerald-500', active);
+      btn.classList.toggle('border-transparent', !active);
+    });
+    document.querySelectorAll('.color-btn').forEach(btn => {
+      const active = btn.getAttribute('data-color') === player.color;
+      btn.classList.toggle('ring-2', active);
+      btn.classList.toggle('ring-emerald-400', active);
+      btn.style.borderColor = active ? '#fff' : 'transparent';
+    });
+
+    // Evita teclas presas caso o jogador mude de janela ou perca o foco.
+    window.addEventListener('blur', () => {
+      Object.keys(keys).forEach(key => { keys[key] = false; });
+      player.isMoving = false;
+      player.isSprinting = false;
+    });
+
+    // --- GAME LOOP & UPDATES ---
+    let lastTime = performance.now();
+
+    function update(dt) {
+      if (screenShakeTime > 0) screenShakeTime -= dt;
+
+      let dx = 0;
+      let dy = 0;
+
+      if (keys.Up) dy -= 1;
+      if (keys.Down) dy += 1;
+      if (keys.Left) dx -= 1;
+      if (keys.Right) dx += 1;
+
+      let speed = 3.3;
+      if (keys.Sprint && player.stamina > 5 && (dx !== 0 || dy !== 0)) {
+        player.isSprinting = true;
+        speed = 5.8;
+        player.stamina = Math.max(0, player.stamina - dt * 35);
+      } else {
+        player.isSprinting = false;
+        player.stamina = Math.min(100, player.stamina + dt * 22);
+      }
+
+      document.getElementById('stamina-bar').style.width = `${player.stamina}%`;
+      document.getElementById('stamina-text').innerText = `${Math.round(player.stamina)}%`;
+
+      if (dx !== 0 || dy !== 0) {
+        const length = Math.hypot(dx, dy);
+        dx /= length;
+        dy /= length;
+
+        // Movimento baseado no tempo: velocidade consistente em diferentes FPS.
+        const frameScale = Math.min(dt, 0.05) * 60;
+        player.x += dx * speed * frameScale;
+        player.y += dy * speed * frameScale;
+
+        player.x = Math.max(30, Math.min(MAP_WIDTH - 30, player.x));
+        player.y = Math.max(30, Math.min(MAP_HEIGHT - 30, player.y));
+
+        player.isMoving = true;
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+          player.dir = dx > 0 ? 'right' : 'left';
+        } else {
+          player.dir = dy > 0 ? 'down' : 'up';
+        }
+
+        player.animTimer += dt;
+        if (player.animTimer > (player.isSprinting ? 0.08 : 0.15)) {
+          player.animFrame = (player.animFrame + 1) % 2;
+          player.animTimer = 0;
+          if (Math.random() < 0.25) soundFX.playStep();
+        }
+      } else {
+        player.isMoving = false;
+        player.animFrame = 0;
+      }
+
+      cameraX = player.x - canvas.width / 2;
+      cameraY = player.y - canvas.height / 2;
+
+      if (screenShakeTime > 0) {
+        cameraX += (Math.random() - 0.5) * 14;
+        cameraY += (Math.random() - 0.5) * 14;
+      }
+
+      cameraX = Math.max(0, Math.min(MAP_WIDTH - canvas.width, cameraX));
+      cameraY = Math.max(0, Math.min(MAP_HEIGHT - canvas.height, cameraY));
+
+      updateBots(dt);
+      updateSpeechBubblesPosition();
+    }
+
+    function updateSpeechBubblesPosition() {
+      const updateBubblePos = (id, targetX, targetY) => {
+        const bubble = activeBubbles.get(id);
+        if (bubble) {
+          const screenX = targetX - cameraX;
+          const screenY = targetY - cameraY - 235;
+          bubble.style.left = `${screenX}px`;
+          bubble.style.top = `${screenY}px`;
+        }
+      };
+
+      updateBubblePos(myId, player.x, player.y);
+      simulatedBots.forEach(bot => updateBubblePos(bot.id, bot.x, bot.y));
+      remotePlayers.forEach((rp, id) => updateBubblePos(id, rp.x, rp.y));
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.translate(-Math.round(cameraX), -Math.round(cameraY));
+
+      const startTileX = Math.max(0, Math.floor(cameraX / TILE_SIZE));
+      const endTileX = Math.min(MAP_TILES_X, Math.ceil((cameraX + canvas.width) / TILE_SIZE) + 1);
+      const startTileY = Math.max(0, Math.floor(cameraY / TILE_SIZE));
+      const endTileY = Math.min(MAP_TILES_Y, Math.ceil((cameraY + canvas.height) / TILE_SIZE) + 1);
+
+      for (let ty = startTileY; ty < endTileY; ty++) {
+        for (let tx = startTileX; tx < endTileX; tx++) {
+          const tileType = mapGrid[ty][tx];
+          const px = tx * TILE_SIZE;
+          const py = ty * TILE_SIZE;
+
+          if (tileType === 0) {
+            ctx.fillStyle = '#166534';
+            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            if ((tx * 7 + ty * 11) % 4 === 0) {
+              ctx.fillStyle = '#15803d';
+              ctx.fillRect(px + 4 + ((tx + ty) % 9), py + 5 + ((tx * 3 + ty) % 10), 3, 5);
+              ctx.fillStyle = '#22c55e';
+              ctx.fillRect(px + 10 + ((tx * 5) % 12), py + 15 + ((ty * 2) % 8), 2, 3);
+            }
+          } else if (tileType === 1) {
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+          } else if (tileType === 2) {
+            ctx.fillStyle = '#ca8a04';
+            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            ctx.fillStyle = '#eab308';
+            ctx.fillRect(px + 2, py + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+          } else if (tileType === 3) {
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            if (ty % 2 === 0 && tx % 5 === 0) {
+              ctx.fillStyle = '#fef08a';
+              ctx.fillRect(px + 6, py + 14, 14, 4);
+            }
+          }
+        }
+      }
+
+      const renderList = [];
+
+      mapProps.forEach(prop => {
+        if (prop.x >= cameraX - 200 && prop.x <= cameraX + canvas.width + 200 &&
+            prop.y >= cameraY - 200 && prop.y <= cameraY + canvas.height + 200) {
+          renderList.push({ type: 'prop', y: prop.y, data: prop });
+        }
+      });
+
+      renderList.push({ type: 'player', y: player.y, data: { ...player, isLocal: true } });
+
+      simulatedBots.forEach(bot => {
+        if (bot.x >= cameraX - 200 && bot.x <= cameraX + canvas.width + 200 &&
+            bot.y >= cameraY - 200 && bot.y <= cameraY + canvas.height + 200) {
+          renderList.push({ type: 'player', y: bot.y, data: { ...bot, isLocal: false } });
+        }
+      });
+
+      remotePlayers.forEach(rp => {
+        if (rp.x >= cameraX - 200 && rp.x <= cameraX + canvas.width + 200 &&
+            rp.y >= cameraY - 200 && rp.y <= cameraY + canvas.height + 200) {
+          renderList.push({ type: 'player', y: rp.y, data: { ...rp, isLocal: false } });
+        }
+      });
+
+      renderList.sort((a, b) => a.y - b.y);
+
+      renderList.forEach(item => {
+        if (item.type === 'prop') {
+          drawProp(ctx, item.data);
+        } else if (item.type === 'player') {
+          drawDinoRider(ctx, item.data, item.data.isLocal);
+        }
+      });
+
+      ctx.restore();
+      drawMinimap();
+    }
+
+    function drawProp(targetCtx, prop) {
+      targetCtx.save();
+      targetCtx.translate(prop.x, prop.y);
+
+      if (prop.type === 'masp') {
+        targetCtx.fillStyle = '#dc2626'; 
+        targetCtx.fillRect(-60, -40, 14, 50);
+        targetCtx.fillRect(60, -40, 14, 50);
+        targetCtx.fillRect(-60, -48, 134, 12); 
+
+        targetCtx.fillStyle = '#94a3b8'; 
+        targetCtx.fillRect(-44, -36, 102, 30);
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.font = 'bold 10px Inter';
+        targetCtx.fillText('MASP', -15, -18);
+
+      } else if (prop.type === 'trio') {
+        targetCtx.fillStyle = '#0284c7'; 
+        targetCtx.fillRect(-35, -20, 70, 30);
+        targetCtx.fillStyle = '#38bdf8'; 
+        targetCtx.fillRect(-30, -32, 60, 12);
+        targetCtx.fillStyle = '#f59e0b'; 
+        targetCtx.beginPath();
+        targetCtx.arc(-20, -34, 4, 0, Math.PI * 2);
+        targetCtx.arc(20, -34, 4, 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.font = 'bold 9px Inter';
+        targetCtx.fillText('🔊 TRIO PAULISTA', -32, -4);
+
+      } else if (prop.type === 'banca') {
+        targetCtx.fillStyle = '#1e293b';
+        targetCtx.fillRect(-15, -12, 30, 22);
+        targetCtx.fillStyle = '#ef4444'; 
+        targetCtx.fillRect(-17, -16, 34, 6);
+        targetCtx.fillStyle = '#fef08a';
+        targetCtx.font = '8px Inter';
+        targetCtx.fillText('BANCA', -12, 0);
+
+      } else if (prop.type === 'banco') {
+        targetCtx.fillStyle = '#78350f';
+        targetCtx.fillRect(-12, -4, 24, 8);
+        targetCtx.fillStyle = '#475569';
+        targetCtx.fillRect(-10, 4, 4, 4);
+        targetCtx.fillRect(6, 4, 4, 4);
+
+      } else if (prop.type === 'tree') {
+        targetCtx.fillStyle = 'rgba(0,0,0,0.3)';
+        targetCtx.beginPath();
+        targetCtx.ellipse(0, 10, 16, 7, 0, 0, Math.PI * 2);
+        targetCtx.fill();
+
+        targetCtx.fillStyle = '#78350f';
+        targetCtx.fillRect(-5, -6, 10, 18);
+
+        targetCtx.fillStyle = '#15803d';
+        targetCtx.beginPath();
+        targetCtx.arc(0, -20, 20, 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.fillStyle = '#22c55e';
+        targetCtx.beginPath();
+        targetCtx.arc(-5, -24, 13, 0, Math.PI * 2);
+        targetCtx.fill();
+      }
+
+      targetCtx.restore();
+    }
+
+    function drawMinimap() {
+      const mw = minimapCanvas.width;
+      const mh = minimapCanvas.height;
+      
+      minimapCtx.fillStyle = '#0f172a';
+      minimapCtx.fillRect(0, 0, mw, mh);
+
+      const scaleX = mw / MAP_WIDTH;
+      const scaleY = mh / MAP_HEIGHT;
+
+      minimapCtx.fillStyle = '#334155';
+      const mapAveY = Math.floor(MAP_TILES_Y / 2) * TILE_SIZE * scaleY;
+      minimapCtx.fillRect(0, mapAveY - 6, mw, 12);
+
+      minimapCtx.fillStyle = '#dc2626';
+      minimapCtx.fillRect(0, mapAveY - 1, mw, 2);
+
+      simulatedBots.forEach(bot => {
+        minimapCtx.fillStyle = bot.color || '#38bdf8';
+        minimapCtx.fillRect(bot.x * scaleX - 1.5, bot.y * scaleY - 1.5, 3, 3);
+      });
+      remotePlayers.forEach(rp => {
+        minimapCtx.fillStyle = rp.color || '#38bdf8';
+        minimapCtx.fillRect(rp.x * scaleX - 1.5, rp.y * scaleY - 1.5, 3.5, 3.5);
+      });
+
+      minimapCtx.fillStyle = '#10b981';
+      minimapCtx.beginPath();
+      minimapCtx.arc(player.x * scaleX, player.y * scaleY, 4, 0, Math.PI * 2);
+      minimapCtx.fill();
+
+      minimapCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      minimapCtx.lineWidth = 1;
+      minimapCtx.strokeRect(
+        cameraX * scaleX,
+        cameraY * scaleY,
+        canvas.width * scaleX,
+        canvas.height * scaleY
+      );
+    }
+
+    function gameLoop(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+
+      update(dt);
+      render();
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    window.onload = () => {
+      requestAnimationFrame(gameLoop);
+    };
+  </script>
+</body>
+</html>
